@@ -1,4 +1,5 @@
 import json
+import re
 import streamlit as st
 from groq import Groq
 
@@ -13,7 +14,10 @@ GFAM_SECTORS = [
     "utilities", "energy", "transport", "medical", "rehab"
 ]
 
-BATCH_SIZE = 5  # Smaller batches for the 8b model
+def clean(text):
+    if not text:
+        return ""
+    return text.encode('ascii', 'ignore').decode('ascii')
 
 def analyze_article(client, article, sector):
     prompt = f"""You are a senior analyst at Genesis Financial Asset Management (GFAM), a Toronto-based private investment firm.
@@ -24,20 +28,24 @@ Target geographies: North America primarily.
 
 Analyze this news article and respond ONLY with a single JSON object. No markdown, no extra text.
 
-Title: {article['title']}
-Description: {article['description']}
+Title: {clean(article['title'])}
+Description: {clean(article['description'])}
 
 Return exactly this JSON structure:
 {{
   "summary": "2-3 sentences explaining what is happening in this article in plain English",
-  "relevance_score": <integer 1-10, where 10 = perfect GFAM deal opportunity, 5 = loosely related to sector, 1 = completely unrelated>,
-  "relevance_reason": "1-2 sentences on why this is or isn't a fit for GFAM's {sector} strategy",
-  "deal_type": "<one of: M&A, Distressed, Growth, Refinancing, Recapitalization, IPO, Fundraise, Regulatory, Other>",
-  "companies_mentioned": ["list", "of", "company", "names"],
-  "locations_mentioned": ["list", "of", "cities", "or", "countries"],
-  "gfam_capital_fit": "<one of: Growth Capital, Acquisition Financing, Liquidity Solutions, Special Situations Financing, Stabilization Capital, None>",
-  "investment_rationale": "1-2 sentences on the specific angle GFAM could pursue — what type of capital, what opportunity, what makes this interesting"
-}}"""
+  "relevance_score": 7,
+  "relevance_reason": "1-2 sentences on why this is or is not a fit for GFAM",
+  "deal_type": "M&A",
+  "companies_mentioned": ["Company A"],
+  "locations_mentioned": ["Toronto"],
+  "gfam_capital_fit": "Acquisition Financing",
+  "investment_rationale": "1-2 sentences on the specific angle GFAM could pursue"
+}}
+
+Valid deal_type: M&A, Distressed, Growth, Refinancing, Recapitalization, IPO, Fundraise, Regulatory, Other
+Valid gfam_capital_fit: Growth Capital, Acquisition Financing, Liquidity Solutions, Special Situations Financing, Stabilization Capital, None
+relevance_score must be integer 1-10. Score 5+ if related to {sector}, business, or finance."""
 
     response = client.chat.completions.create(
         model="llama-3.1-8b-instant",
@@ -46,10 +54,15 @@ Return exactly this JSON structure:
     )
 
     raw = response.choices[0].message.content.strip()
+
+    # Extract JSON object robustly
     start = raw.find('{')
     end = raw.rfind('}') + 1
     if start != -1 and end > start:
         raw = raw[start:end]
+
+    # Remove control characters that break JSON parsing
+    raw = re.sub(r'[\x00-\x1f\x7f]', ' ', raw)
 
     return json.loads(raw)
 
@@ -62,9 +75,8 @@ def summarize_articles(articles: list[dict], sector: str) -> list[dict]:
         try:
             ai = analyze_article(client, article, sector)
         except Exception as e:
-            st.warning(f"Could not analyze: {article['title'][:50]} — {e}")
             ai = {
-                "summary": article["description"],
+                "summary": clean(article["description"]),
                 "relevance_score": 5,
                 "relevance_reason": "Could not parse AI response.",
                 "deal_type": "Other",
@@ -87,7 +99,7 @@ def summarize_articles(articles: list[dict], sector: str) -> list[dict]:
         results.append({
             **article,
             "gfam_sector": sector,
-            "summary": ai.get("summary", article["description"]),
+            "summary": ai.get("summary", clean(article["description"])),
             "relevance_score": ai.get("relevance_score", 5),
             "relevance_reason": ai.get("relevance_reason", ""),
             "deal_type": ai.get("deal_type", "Other"),
