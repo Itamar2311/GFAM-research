@@ -1,0 +1,104 @@
+import json
+import streamlit as st
+from groq import Groq
+
+GFAM_GEOGRAPHIES = [
+    "Canada", "United States", "UK", "United Kingdom", "Europe",
+    "Toronto", "New York", "London", "Chicago", "Boston"
+]
+
+GFAM_SECTORS = [
+    "infrastructure", "healthcare", "financial services", "fintech",
+    "insurance", "asset management", "private equity", "credit",
+    "utilities", "energy", "transport", "medical", "rehab"
+]
+
+BATCH_SIZE = 5  # Smaller batches for the 8b model
+
+def analyze_article(client, article, sector):
+    prompt = f"""You are a senior analyst at Genesis Financial Asset Management (GFAM), a Toronto-based private investment firm.
+
+GFAM focuses on {sector}. They provide equity, structured debt, and hybrid capital to support ownership changes and strategic objectives.
+Capital products: Growth Capital, Acquisition Financing, Liquidity Solutions, Special Situations Financing, Stabilization Capital.
+Target geographies: North America primarily.
+
+Analyze this news article and respond ONLY with a single JSON object. No markdown, no extra text.
+
+Title: {article['title']}
+Description: {article['description']}
+
+Return exactly this JSON structure:
+{{
+  "summary": "2-3 sentences explaining what is happening in this article in plain English",
+  "relevance_score": <integer 1-10, where 10 = perfect GFAM deal opportunity, 5 = loosely related to sector, 1 = completely unrelated>,
+  "relevance_reason": "1-2 sentences on why this is or isn't a fit for GFAM's {sector} strategy",
+  "deal_type": "<one of: M&A, Distressed, Growth, Refinancing, Recapitalization, IPO, Fundraise, Regulatory, Other>",
+  "companies_mentioned": ["list", "of", "company", "names"],
+  "locations_mentioned": ["list", "of", "cities", "or", "countries"],
+  "gfam_capital_fit": "<one of: Growth Capital, Acquisition Financing, Liquidity Solutions, Special Situations Financing, Stabilization Capital, None>",
+  "investment_rationale": "1-2 sentences on the specific angle GFAM could pursue — what type of capital, what opportunity, what makes this interesting"
+}}"""
+
+    response = client.chat.completions.create(
+        model="llama-3.1-8b-instant",
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=600,
+    )
+
+    raw = response.choices[0].message.content.strip()
+    start = raw.find('{')
+    end = raw.rfind('}') + 1
+    if start != -1 and end > start:
+        raw = raw[start:end]
+
+    return json.loads(raw)
+
+
+def summarize_articles(articles: list[dict], sector: str) -> list[dict]:
+    client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+    results = []
+
+    for article in articles:
+        try:
+            ai = analyze_article(client, article, sector)
+        except Exception as e:
+            st.warning(f"Could not analyze: {article['title'][:50]} — {e}")
+            ai = {
+                "summary": article["description"],
+                "relevance_score": 5,
+                "relevance_reason": "Could not parse AI response.",
+                "deal_type": "Other",
+                "companies_mentioned": [],
+                "locations_mentioned": [],
+                "gfam_capital_fit": "None",
+                "investment_rationale": "",
+            }
+
+        locations = ai.get("locations_mentioned", [])
+        geo_match = any(
+            loc.lower() in g.lower() or g.lower() in loc.lower()
+            for loc in locations
+            for g in GFAM_GEOGRAPHIES
+        )
+
+        sector_tags = [article.get("description", "").lower()]
+        sector_match = any(s in " ".join(sector_tags) for s in GFAM_SECTORS)
+
+        results.append({
+            **article,
+            "gfam_sector": sector,
+            "summary": ai.get("summary", article["description"]),
+            "relevance_score": ai.get("relevance_score", 5),
+            "relevance_reason": ai.get("relevance_reason", ""),
+            "deal_type": ai.get("deal_type", "Other"),
+            "companies_mentioned": ai.get("companies_mentioned", []),
+            "locations_mentioned": locations,
+            "gfam_capital_fit": ai.get("gfam_capital_fit", "None"),
+            "investment_rationale": ai.get("investment_rationale", ""),
+            "sector_tags": [],
+            "geo_match": geo_match,
+            "sector_match": sector_match,
+        })
+
+    results.sort(key=lambda x: x["relevance_score"], reverse=True)
+    return results
