@@ -1,4 +1,5 @@
 import requests
+import time
 from datetime import datetime, timedelta
 import streamlit as st
 
@@ -6,22 +7,18 @@ SECTOR_QUERIES = {
     "Infrastructure": [
         "infrastructure investment acquisition private equity",
         "utilities transport energy infrastructure deal",
-        "infrastructure fund ownership change capital",
     ],
     "Healthcare Services": [
         "healthcare services acquisition private equity investment",
         "medical services clinic buyout ownership change",
-        "healthcare provider capital financing growth",
     ],
     "Financial Services": [
         "financial services fintech acquisition investment",
         "insurance asset management buyout private equity",
-        "specialty finance banking deal capital",
     ],
     "Special Situations": [
         "special situations distressed debt restructuring",
         "company restructuring recapitalization private credit",
-        "distressed asset acquisition turnaround financing",
     ],
 }
 
@@ -32,13 +29,16 @@ def fetch_articles(sector: str, extra_keywords: str, days_back: int) -> list[dic
     seen_urls = set()
     all_articles = []
 
-    for base_query in queries:
+    for i, base_query in enumerate(queries):
+        if i > 0:
+            time.sleep(2)  # Wait 2 seconds between requests
+
         query = f"{base_query} {extra_keywords}".strip() if extra_keywords else base_query
 
         params = {
             "q": query,
             "lang": "en",
-            "max": 5,
+            "max": 8,
             "sortby": "relevance",
             "token": api_key,
         }
