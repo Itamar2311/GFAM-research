@@ -45,10 +45,15 @@ def fetch_articles(sector: str, extra_keywords: str, days_back: int) -> list[dic
             "apiKey": api_key,
         }
 
-        response = requests.get("https://newsapi.org/v2/everything", params=params)
-        data = response.json()
+        try:
+            response = requests.get("https://newsapi.org/v2/everything", params=params, timeout=10)
+            data = response.json()
+        except Exception as e:
+            st.warning(f"Request failed: {e}")
+            continue
 
         if data.get("status") != "ok":
+            st.warning(f"NewsAPI error: {data.get('code')} — {data.get('message')}")
             continue
 
         for a in data.get("articles", []):
