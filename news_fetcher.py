@@ -26,8 +26,7 @@ SECTOR_QUERIES = {
 }
 
 def fetch_articles(sector: str, extra_keywords: str, days_back: int) -> list[dict]:
-    api_key = st.secrets["NEWSAPI_KEY"]
-    from_date = (datetime.now() - timedelta(days=days_back)).strftime("%Y-%m-%d")
+    api_key = st.secrets["GNEWS_API_KEY"]
     queries = SECTOR_QUERIES.get(sector, [sector])
 
     seen_urls = set()
@@ -38,22 +37,22 @@ def fetch_articles(sector: str, extra_keywords: str, days_back: int) -> list[dic
 
         params = {
             "q": query,
-            "from": from_date,
-            "sortBy": "relevancy",
-            "language": "en",
-            "pageSize": 5,
-            "apiKey": api_key,
+            "lang": "en",
+            "max": 5,
+            "sortby": "relevance",
+            "token": api_key,
         }
 
         try:
-            response = requests.get("https://newsapi.org/v2/everything", params=params, timeout=10)
+            response = requests.get("https://gnews.io/api/v4/search", params=params, timeout=10)
             data = response.json()
         except Exception as e:
             st.warning(f"Request failed: {e}")
             continue
 
-        if data.get("status") != "ok":
-            st.warning(f"NewsAPI error: {data.get('code')} — {data.get('message')}")
+        errors = data.get("errors", [])
+        if errors:
+            st.warning(f"GNews error: {errors}")
             continue
 
         for a in data.get("articles", []):
@@ -66,9 +65,9 @@ def fetch_articles(sector: str, extra_keywords: str, days_back: int) -> list[dic
             all_articles.append({
                 "title": a["title"],
                 "description": a.get("description", "")[:150],
-                "source": a["source"]["name"],
+                "source": a.get("source", {}).get("name", ""),
                 "url": a["url"],
-                "published_at": a["publishedAt"][:10],
+                "published_at": a.get("publishedAt", "")[:10],
             })
 
     return all_articles
