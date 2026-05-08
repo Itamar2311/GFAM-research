@@ -31,7 +31,7 @@ def fetch_articles(sector: str, extra_keywords: str, days_back: int) -> list[dic
 
     for i, base_query in enumerate(queries):
         if i > 0:
-            time.sleep(2)  # Wait 2 seconds between requests
+            time.sleep(2)
 
         query = f"{base_query} {extra_keywords}".strip() if extra_keywords else base_query
 
@@ -49,6 +49,10 @@ def fetch_articles(sector: str, extra_keywords: str, days_back: int) -> list[dic
         except Exception as e:
             st.warning(f"Request failed: {e}")
             continue
+
+        # Show full raw response for debugging
+        st.write(f"Query: {query}")
+        st.write(f"Raw response: {data}")
 
         errors = data.get("errors", [])
         if errors:
